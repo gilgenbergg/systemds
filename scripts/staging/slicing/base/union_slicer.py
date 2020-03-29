@@ -1,6 +1,6 @@
-from slicing.node import Node
-from slicing.top_k import Topk
-from slicing.slicer import opt_fun, union
+from slicing.base.node import Node
+from slicing.base.top_k import Topk
+from slicing.base.slicer import opt_fun, union
 
 
 def check_attributes(left_node, right_node):
@@ -14,15 +14,12 @@ def check_attributes(left_node, right_node):
     return flag
 
 
-def process(all_features, model, complete_x, loss, x_size, y_test, errors, debug, alpha, k, w, loss_type):
-    counter = 0
-    # First level slices are enumerated in a "classic way" (getting data and not analyzing bounds
-    first_level = []
-    levels = []
+def make_first_level(all_features, complete_x, loss, x_size, y_test, errors, loss_type, w, alpha, top_k):
     all_nodes = {}
-    top_k = Topk(k)
+    counter = 0
+    first_level = []
     for feature in all_features:
-        new_node = Node(all_features, model, complete_x, loss, x_size, y_test, errors)
+        new_node = Node(complete_x, loss, x_size, y_test, errors)
         new_node.parents = [(feature, counter)]
         new_node.attributes.append((feature, counter))
         new_node.name = new_node.make_name()
@@ -44,10 +41,22 @@ def process(all_features, model, complete_x, loss, x_size, y_test, errors, debug
             # this method updates top k slices if needed
             top_k.add_new_top_slice(new_node)
         counter = counter + 1
-    # double appending of first level nodes in order to enumerating second level in the same way as others
-    levels.append((first_level, len(all_features)))
-    levels.append((first_level, len(all_features)))
+    return first_level, all_nodes
 
+
+def union_enum():
+    return None
+
+
+def process(all_features, complete_x, loss, x_size, y_test, errors, debug, alpha, k, w, loss_type, b_update):
+    top_k = Topk(k)
+    # First level slices are enumerated in a "classic way" (getting data and not analyzing bounds
+    levels = []
+    first_level = make_first_level(all_features, complete_x, loss, x_size, y_test, errors, loss_type, w, alpha, top_k)
+    # double appending of first level nodes in order to enumerating second level in the same way as others
+    levels.append((first_level[0], len(all_features)))
+    levels.append((first_level[0], len(all_features)))
+    all_nodes = first_level[1]
     # cur_lvl - index of current level, correlates with number of slice forming features
     cur_lvl = 2  # level that is planned to be filled later
     cur_lvl_nodes = first_level
@@ -66,7 +75,7 @@ def process(all_features, model, complete_x, loss, x_size, y_test, errors, debug
                 for node_j in range(len(levels[right][0])):
                     flag = check_attributes(levels[left][0][node_i], levels[right][0][node_j])
                     if not flag:
-                        new_node = Node(all_features, model, complete_x, loss, x_size, y_test, errors)
+                        new_node = Node(complete_x, loss, x_size, y_test, errors)
                         parents_set = set(new_node.parents)
                         parents_set.add(levels[left][0][node_i])
                         parents_set.add(levels[right][0][node_j])
@@ -82,32 +91,12 @@ def process(all_features, model, complete_x, loss, x_size, y_test, errors, debug
                             existing_item = all_nodes[new_node.key[1]]
                             parents_set = set(existing_item.parents)
                             existing_item.parents = parents_set
-                            s_upper = new_node.calc_s_upper(cur_lvl)
-                            s_lower = new_node.calc_s_lower(cur_lvl)
-                            e_upper = new_node.calc_e_upper()
-                            e_max_upper = new_node.calc_e_max_upper(cur_lvl)
-                            try:
-                                minimized = min(s_upper, new_node.s_upper)
-                                new_node.s_upper = minimized
-                                minimized = min(s_lower, new_node.s_lower)
-                                new_node.s_lower = minimized
-                                minimized = min(e_upper, new_node.e_upper)
-                                new_node.e_upper = minimized
-                                minimized= min(e_max_upper, new_node.e_max_upper)
-                                new_node.e_max_upper = minimized
-                                c_upper = new_node.calc_c_upper(w)
-                                minimized= min(c_upper, new_node.c_upper)
-                                new_node.c_upper = minimized
-                            except AttributeError:
-                                # initial bounds calculation
-                                new_node.s_upper = s_upper
-                                new_node.s_lower = s_lower
-                                new_node.e_upper = e_upper
-                                new_node.e_max_upper = e_max_upper
-                                c_upper = new_node.calc_c_upper(w)
-                                new_node.c_upper = c_upper
-                            minimized = min(c_upper, new_node.c_upper)
-                            new_node.c_upper = minimized
+                            if b_update:
+                                s_upper = new_node.calc_s_upper(cur_lvl)
+                                s_lower = new_node.calc_s_lower(cur_lvl)
+                                e_upper = new_node.calc_e_upper()
+                                e_max_upper = new_node.calc_e_max_upper(cur_lvl)
+                                new_node.update_bounds(s_upper, s_lower, e_upper, e_max_upper, w)
                         else:
                             new_node.calc_bounds(cur_lvl, w)
                             all_nodes[new_node.key[1]] = new_node

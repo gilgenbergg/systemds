@@ -48,5 +48,4 @@ class Topk:
         for candidate in self.slices:
             print(candidate.name + ": " + "score = " + str(candidate.score) + "; size = " + str(candidate.size))
 
-            print(candidate.name + ": " + "score = " + str(candidate.score) + "; size = " + str(candidate.size))
 
